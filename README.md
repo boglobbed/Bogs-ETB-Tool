@@ -1,13 +1,13 @@
-# ETB-Save-Deleter V1.3 by Bog
-Deletes all .sav files excluding essential files.
+# Bog's ETB Tool
 
-The Auto-Delete feature deletes all save files all the time automatically. Only use Auto-Delete feature in individual levels that don't need a reset to complete the level (ex. Car Codes, Level 52...) If you use the Auto-Delete feature in a level that requires a reset to beat, your progress will be gone when you reset the level.
+**Save File Deleter:** Just open the tab and hit "Delete All Saves" to clear your data. You can also toggle the "Auto-Delete" checkbox if you want it to clear them automatically during your runs. Includes custom keybind system so you can click a button while in ETB to delete your saves.
 
-The Always On Top feature makes it so the program doesn't dissapear when you tab into other programs like ETB.
+**Version Switcher:** Select the version you want from the list, then click "Switch Version." If you have "Auto-Launch" checked, the game will open for you as soon as it's finished. Use the arrows to move versions up or down in your order list. To add a version to switch to, add it by clicking "Open Versions Folder", making a new folder with the name of the version, and adding the depot files in there. It should show up in the tool.
 
-You can set a keybind by clicking "Add Keybind" and clicking the bind you want. You can click that bind in ETB, and it delets all the save files. No tabbing in required!
+**Mod Manager:** First, click "Select Mods Folder" and point it to your game's mods folder. Once set, you can select any .pak file in the list and click "Enable/Disable" to toggle it. Mods shown in grey and have .disabled at the end are currently disabled.
 
-The Ignore Mouse Cursor feature should be enabled whenn running, because it stop you from accidentally tabbing into the app. To reaccess the app, you need to tab back in.
+**Keybind Editor:** This lists all your current in-game keybinds. You can select one and click "Delete Keybind" to remove it, or use the "Add Keybind" button to create a new one.
 
-Please report any bugs that you may come across
-- Bog
+**Settings:** Click the gear icon in the top right. You can enable "Always On Top" to keep the window visible, and "Ignore Mouse Cursor" lets you click through the tool while it's transparent so it doesn't get in your way while playing.
+
+**Please report any bugs that you find so I can make this mod as perfect as possible!**
