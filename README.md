@@ -10,4 +10,7 @@
 
 **Settings:** Click the gear icon in the top right. You can enable "Always On Top" to keep the window visible, and "Ignore Mouse Cursor" lets you click through the tool while it's transparent so it doesn't get in your way while playing.
 
+# How to Download
+Go to the Releasess tab and download the .exe file in there
+
 **Please report any bugs that you find so I can make this mod as perfect as possible!**
