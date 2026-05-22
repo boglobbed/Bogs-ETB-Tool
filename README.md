@@ -2,7 +2,7 @@
 
 **Save File Deleter:** Just open the tab and hit "Delete All Saves" to clear your data. You can also toggle the "Auto-Delete" checkbox if you want it to clear them automatically during your runs. Includes custom keybind system so you can click a button while in ETB to delete your saves.
 
-**Version Switcher:** Select the version you want from the list, then click "Switch Version." If you have "Auto-Launch" checked, the game will open for you as soon as it's finished. Use the arrows to move versions up or down in your order list. To add a version to switch to, add it by clicking "Open Versions Folder", making a new folder with the name of the version, and adding the depot files in there. It should show up in the tool.
+**Version Switcher:** Select the version you want from the list, then click "Switch Version." If you have "Auto-Launch" checked, the game will open for you as soon as it's finished. Use the arrows to move versions up or down in your order list. To add a version to switch to, add it by clicking "Open Versions Folder", making a new folder with the name of the version, and adding the depot files in there. It should show up in the tool. (WHEN USING THE VERSION SWITCHER MAKE SURE ETB IS FULLY CLOSED BEFORE YOU SWITCH THE FILES)
 
 **Mod Manager:** First, click "Select Mods Folder" and point it to your game's mods folder. Once set, you can select any .pak file in the list and click "Enable/Disable" to toggle it. Mods shown in grey and have .disabled at the end are currently disabled.
 
