@@ -6,7 +6,7 @@ A utility tool for Escape the Backrooms speedrunning. Includes a mod manager, sa
 
 ## Setup
 
-1. Download the latest release zip
+1. Download the latest release zip from the [Releases Tab](https://github.com/boglobbed/Bogs-ETB-Tool/releases)
 2. **Extract it to its own folder** — don't run it from inside the zip or from your Downloads folder. Put it somewhere like your Desktop or Documents
 3. Run `bogs_etb_tool.exe`
 4. You'll get a UAC popup asking for admin — this is needed so the tool can write to your game directory (required for version switching and mod management). Click Yes
