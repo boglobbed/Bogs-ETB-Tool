@@ -5,9 +5,11 @@ import ctypes
 import shutil
 import glob
 import threading
+import time
 import tkinter as tk
 from tkinter import ttk
 from pynput import keyboard as pynput_keyboard
+from pynput import mouse as pynput_mouse
 
 class CURSORINFO(ctypes.Structure):
     _fields_ = [
@@ -69,6 +71,7 @@ SAVE_PATH = os.path.join(os.environ["LOCALAPPDATA"], "EscapeTheBackrooms", "Save
 current_keybind = [None]
 listening = [False]
 switching = [False]
+steam_closed_this_session = [False]
 
 def launch_etb():
     os.startfile(r"steam://rungameid/1943950")
@@ -176,7 +179,7 @@ def show_mod_manager():
     version_frame.pack_forget()
     keybind_frame_tool.pack_forget()
     mod_frame.pack(fill="both", expand=True)
-    subtitle_label.config(text="Mod Manager")
+    subtitle_label.config(text="ETB Launcher")
 
 def show_keybind_editor():
     save_frame.pack_forget()
@@ -187,14 +190,14 @@ def show_keybind_editor():
     refresh_keybinds_now()
 
 def on_mode_change(event):
-    if mode_var.get() == "Save File Deleter":
+    if mode_var.get() == "ETB Launcher":
+        show_mod_manager()
+    elif mode_var.get() == "Save File Deleter":
         show_save_deleter()
     elif mode_var.get() == "Version Switcher":
         show_version_switcher()
     elif mode_var.get() == "Keybind Editor":
         show_keybind_editor()
-    else:
-        show_mod_manager()
 
 def delete_saves():
     for f in get_save_files():
@@ -296,6 +299,10 @@ def on_global_key(key):
         if current_keybind[0] is not None and key == current_keybind[0]:
             delete_saves()
 
+def on_global_mouse_click(x, y, button, pressed):
+    if not pressed:
+        return
+
 def refresh_versions_now():
     selected = version_listbox.curselection()
     selected_name = version_listbox.get(selected[0]) if selected else None
@@ -350,6 +357,14 @@ def move_item(src, dst):
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.move(src, dst)
 
+def fast_move_item(src, dst):
+    if os.path.exists(dst):
+        if os.path.isdir(dst):
+            shutil.rmtree(dst)
+        else:
+            os.remove(dst)
+    shutil.move(src, dst)
+
 def remove_empty_dirs(base):
     for dirpath, dirnames, filenames in os.walk(base, topdown=False):
         if dirpath == base:
@@ -379,16 +394,87 @@ def fix_steam_manifest():
     except Exception:
         pass
 
+def get_enabled_bundled_mods():
+    mods_path = get_mods_path()
+    enabled = []
+    if mods_path:
+        for mod in BUNDLED_MODS:
+            if os.path.exists(os.path.join(mods_path, mod)):
+                enabled.append(mod)
+    return enabled
+
+def restore_bundled_mods(enabled_mods, ue4ss_enabled):
+    mods_path = get_mods_path()
+    if mods_path:
+        os.makedirs(mods_path, exist_ok=True)
+        bundled = get_bundled_mods_dir()
+        for mod in BUNDLED_MODS:
+            dst = os.path.join(mods_path, mod)
+            src = os.path.join(bundled, mod)
+            if mod in enabled_mods:
+                if not os.path.exists(dst) and os.path.exists(src):
+                    shutil.copy2(src, dst)
+            else:
+                if os.path.exists(dst):
+                    os.remove(dst)
+    if ue4ss_enabled:
+        win64 = get_win64_path()
+        bundled = get_bundled_mods_dir()
+        if win64 and bundled:
+            src_dll = os.path.join(bundled, "dwmapi.dll")
+            src_folder = os.path.join(bundled, "ue4ss")
+            dst_dll = os.path.join(win64, "dwmapi.dll")
+            dst_folder = os.path.join(win64, "ue4ss")
+            if os.path.exists(src_dll) and not os.path.exists(dst_dll):
+                shutil.copy2(src_dll, dst_dll)
+            if os.path.exists(src_folder) and not os.path.exists(dst_folder):
+                shutil.copytree(src_folder, dst_folder)
+    else:
+        win64 = get_win64_path()
+        if win64:
+            dst_dll = os.path.join(win64, "dwmapi.dll")
+            dst_folder = os.path.join(win64, "ue4ss")
+            if os.path.exists(dst_dll):
+                os.remove(dst_dll)
+            if os.path.exists(dst_folder):
+                shutil.rmtree(dst_folder, ignore_errors=True)
+
 def set_switch_ui_locked(locked):
     state = "disabled" if locked else "normal"
     switch_btn.config(state=state)
     mode_dropdown.config(state="disabled" if locked else "readonly")
+
+def close_steam():
+    import subprocess
+    subprocess.run(['taskkill', '/F', '/IM', 'steam.exe'], capture_output=True)
+    import time
+    time.sleep(2)
+
+def open_steam():
+    import subprocess
+    steam_exe = r"C:\Program Files (x86)\Steam\steam.exe"
+    if not os.path.exists(steam_exe):
+        for letter in string.ascii_uppercase:
+            candidate = os.path.join(f"{letter}:\\", "Program Files (x86)", "Steam", "steam.exe")
+            if os.path.exists(candidate):
+                steam_exe = candidate
+                break
+    try:
+        subprocess.Popen([steam_exe])
+    except Exception:
+        pass
 
 def do_switch_thread(version_name, backup_name_for_current):
     global GAME_PATH
     import time
     try:
         start_time = time.time()
+        root.after(0, lambda: version_status.config(text="Closing Steam...", fg="#aaaaaa"))
+        if not steam_closed_this_session[0]:
+            close_steam()
+            steam_closed_this_session[0] = True
+        enabled_mods = get_enabled_bundled_mods()
+        ue4ss_was_enabled = is_ue4ss_installed()
         current = get_current_version()
         version_path = os.path.join(get_versions_dir(), version_name)
 
@@ -412,14 +498,14 @@ def do_switch_thread(version_name, backup_name_for_current):
             for item in items_to_move_out:
                 src = os.path.join(GAME_PATH, item)
                 dst = os.path.join(backup_dir, item)
-                move_item(src, dst)
+                fast_move_item(src, dst)
                 tick()
 
         root.after(0, lambda: version_status.config(text="Swapping versions...", fg="#aaaaaa"))
         for item in items_to_move_in:
             src = os.path.join(version_path, item)
             dst = os.path.join(GAME_PATH, item)
-            move_item(src, dst)
+            fast_move_item(src, dst)
             tick()
 
         elapsed = int(time.time() - start_time)
@@ -428,6 +514,9 @@ def do_switch_thread(version_name, backup_name_for_current):
 
         set_current_version(version_name)
         fix_steam_manifest()
+        restore_bundled_mods(enabled_mods, ue4ss_was_enabled)
+        if not auto_launch.get():
+            open_steam()
         root.after(0, lambda: current_ver_label.config(text=f"Current: {version_name}"))
         root.after(0, lambda ts=time_str, vn=version_name: version_status.config(text=f"Done! {vn} ({ts})", fg="#2ecc71"))
         root.after(0, lambda: progress_bar.config(value=0))
@@ -616,11 +705,20 @@ root.geometry("320x560")
 root.resizable(False, False)
 root.configure(bg="#1a1a1a")
 
+_exe_dir = get_exe_dir().lower()
+if "downloads" in _exe_dir:
+    import tkinter.messagebox as _mb
+    _mb.showwarning(
+        "Move the Tool First!",
+        "It looks like you're running Bog's ETB Tool from your Downloads folder.\n\n"
+        "Please move the tool to its own folder (e.g. Desktop or Documents) before running it, "
+        "otherwise config files and versions will be created in your Downloads folder."
+    )
+
 root.bind("<FocusIn>", on_app_focus_in)
 root.bind("<FocusOut>", on_app_focus_out)
 
-mode_var = tk.StringVar(value="Save File Deleter")
-mode_dropdown = ttk.Combobox(root, textvariable=mode_var, values=["Save File Deleter", "Version Switcher", "Keybind Editor", "Mod Manager"], state="readonly", font=("Segoe UI", 9), width=22)
+mode_var = tk.StringVar(value="ETB Launcher")
 
 style = ttk.Style()
 style.theme_use("clam")
@@ -657,14 +755,16 @@ cog_canvas.bind("<Leave>", lambda e: draw_industrial_gear("#666666"))
 cog_canvas.bind("<Button-1>", lambda e: open_settings())
 draw_industrial_gear()
 
+mode_dropdown = ttk.Combobox(root, textvariable=mode_var,
+    values=["ETB Launcher", "Save File Deleter", "Version Switcher", "Keybind Editor"],
+    state="readonly", font=("Segoe UI", 9), width=22)
 mode_dropdown.pack(pady=(4, 4))
 mode_dropdown.bind("<<ComboboxSelected>>", on_mode_change)
 
-subtitle_label = tk.Label(root, text="Save File Deleter", bg="#1a1a1a", fg="#666666", font=("Segoe UI", 8))
+subtitle_label = tk.Label(root, text="ETB Launcher", bg="#1a1a1a", fg="#666666", font=("Segoe UI", 8))
 subtitle_label.pack(pady=(0, 4))
 
 save_frame = tk.Frame(root, bg="#1a1a1a")
-save_frame.pack(fill="both", expand=True)
 
 save_list_frame = tk.Frame(save_frame, bg="#2a2a2a")
 save_list_frame.pack(padx=16, fill="both", expand=True)
@@ -724,8 +824,6 @@ switch_btn = tk.Button(version_frame, text="Switch Version", command=switch_vers
 switch_btn.pack(pady=(10, 4))
 
 auto_launch = tk.BooleanVar()
-chk_auto_launch = tk.Checkbutton(version_frame, text="Auto-Launch after switch", variable=auto_launch, bg="#1a1a1a", fg="#aaaaaa", activebackground="#1a1a1a", activeforeground="#ffffff", selectcolor="#1a1a1a", font=("Segoe UI", 9), cursor="hand2")
-chk_auto_launch.pack(pady=(0, 4))
 
 ver_btn_frame = tk.Frame(version_frame, bg="#1a1a1a")
 ver_btn_frame.pack(pady=(0, 4))
@@ -745,13 +843,224 @@ progress_bar.pack(pady=(8, 4))
 version_status = tk.Label(version_frame, text="Select a version to switch to.", bg="#1a1a1a", fg="#666666", font=("Segoe UI", 8), wraplength=290)
 version_status.pack(pady=(0, 10))
 
+def get_bundled_mods_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.join(sys._MEIPASS, "bundled_mods")
+    return os.path.join(get_exe_dir(), "bundled_mods")
+
+def get_win64_path():
+    if GAME_PATH:
+        return os.path.join(GAME_PATH, "EscapeTheBackrooms", "Binaries", "Win64")
+    return None
+
+def is_ue4ss_installed():
+    win64 = get_win64_path()
+    if not win64:
+        return False
+    return os.path.exists(os.path.join(win64, "dwmapi.dll"))
+
+def toggle_ue4ss(var):
+    win64 = get_win64_path()
+    if not win64:
+        var.set(not var.get())
+        return
+    bundled = get_bundled_mods_dir()
+    src_dll = os.path.join(bundled, "dwmapi.dll")
+    src_folder = os.path.join(bundled, "ue4ss")
+    dst_dll = os.path.join(win64, "dwmapi.dll")
+    dst_folder = os.path.join(win64, "ue4ss")
+    if var.get():
+        if os.path.exists(src_dll):
+            shutil.copy2(src_dll, dst_dll)
+        if os.path.exists(src_folder):
+            if os.path.exists(dst_folder):
+                shutil.rmtree(dst_folder)
+            shutil.copytree(src_folder, dst_folder)
+    else:
+        if os.path.exists(dst_dll):
+            os.remove(dst_dll)
+        if os.path.exists(dst_folder):
+            shutil.rmtree(dst_folder, ignore_errors=True)
+            if os.path.exists(dst_folder):
+                import stat
+                def remove_readonly(func, path, _):
+                    os.chmod(path, stat.S_IWRITE)
+                    func(path)
+                shutil.rmtree(dst_folder, onerror=remove_readonly)
+
+BUNDLED_MODS = ["Z_Interpose_P.pak", "ShowTriggers.pak", "SpeedrunUtils.pak", "ModWidgetsLib.pak"]
+
+BUNDLED_MOD_NAMES = {
+    "Z_Interpose_P.pak": "Z Interpose P",
+    "ShowTriggers.pak": "SpeedrunUtils (Gen5)",
+    "SpeedrunUtils.pak": "SpeedrunUtils (Gen4)",
+    "ModWidgetsLib.pak": "Mod Widgets",
+}
+
+def get_bundled_mod_state(mod_name):
+    mods_path = get_mods_path()
+    if not mods_path:
+        return False
+    return os.path.exists(os.path.join(mods_path, mod_name))
+
+def toggle_bundled_mod(mod_name, var):
+    mods_path = get_mods_path()
+    if not mods_path:
+        from tkinter import messagebox
+        messagebox.showwarning("No Mods Folder", "No mods folder detected!")
+        var.set(not var.get())
+        return
+    enabled = os.path.join(mods_path, mod_name)
+    disabled = os.path.join(mods_path, mod_name + ".disabled")
+    bundled = os.path.join(get_bundled_mods_dir(), mod_name)
+    if var.get():
+        if os.path.exists(disabled):
+            os.remove(disabled)
+        if os.path.exists(bundled):
+            shutil.copy2(bundled, enabled)
+    else:
+        if os.path.exists(enabled):
+            os.remove(enabled)
+        if os.path.exists(disabled):
+            os.remove(disabled)
+    refresh_mods()
+
 mod_frame = tk.Frame(root, bg="#1a1a1a")
+
+ENGINE_INI_PATH = os.path.join(os.environ["LOCALAPPDATA"], "EscapeTheBackrooms", "Saved", "Config", "WindowsNoEditor", "Engine.ini")
+
+ENGINE_INI_CONTENT = """[/Script/EngineSettings.GameMapsSettings]
+GameDefaultMap=/Game/Maps/MainMenuMap.MainMenuMap
+
+[Core.System]
+Paths=../../../Engine/Content
+Paths=%GAMEDIR%Content
+Paths=../../../Engine/Plugins/Experimental/Water/Content
+Paths=../../../Engine/Plugins/Experimental/Landmass/Content
+Paths=../../../Engine/Plugins/FX/Niagara/Content
+Paths=../../../Engine/Plugins/Experimental/PythonScriptPlugin/Content
+Paths=../../../Engine/Plugins/Experimental/GeometryProcessing/Content
+Paths=../../../EscapeTheBackrooms/Plugins/AsyncLoadingScreen/Content
+Paths=../../../Engine/Plugins/Runtime/Steam/SteamVR/Content
+Paths=../../../Engine/Plugins/Runtime/OpenXR/Content
+Paths=../../../EscapeTheBackrooms/Plugins/BlockoutToolsPlugin/Content
+Paths=../../../Engine/Plugins/Runtime/SunPosition/Content
+Paths=../../../EscapeTheBackrooms/Plugins/BacktraceIntegration/Content
+Paths=../../../Engine/Plugins/Experimental/ChaosVehiclesPlugin/Content
+Paths=../../../EscapeTheBackrooms/Plugins/SmoothSync/Content
+Paths=../../../Engine/Plugins/Runtime/Oculus/OculusOpenXR/Content
+Paths=../../../EscapeTheBackrooms/Plugins/DragonIK/Content
+Paths=../../../EscapeTheBackrooms/Plugins/XShip/Content
+Paths=../../../Engine/Plugins/2D/Paper2D/Content
+Paths=../../../Engine/Plugins/Developer/AnimationSharing/Content
+Paths=../../../Engine/Plugins/Editor/GeometryMode/Content
+Paths=../../../Engine/Plugins/Editor/SpeedTreeImporter/Content
+Paths=../../../Engine/Plugins/Enterprise/DatasmithContent/Content
+Paths=../../../Engine/Plugins/Experimental/ChaosClothEditor/Content
+Paths=../../../Engine/Plugins/Experimental/GeometryCollectionPlugin/Content
+Paths=../../../Engine/Plugins/Experimental/ChaosSolverPlugin/Content
+Paths=../../../Engine/Plugins/Experimental/ChaosNiagara/Content
+Paths=../../../Engine/Plugins/Experimental/MotoSynth/Content
+Paths=../../../Engine/Plugins/MagicLeap/MagicLeapPassableWorld/Content
+Paths=../../../Engine/Plugins/MagicLeap/MagicLeap/Content
+Paths=../../../Engine/Plugins/Media/MediaCompositing/Content
+Paths=../../../Engine/Plugins/Runtime/Synthesis/Content
+Paths=../../../Engine/Plugins/Runtime/AudioSynesthesia/Content
+"""
+
+def is_intro_skipped():
+    if not os.path.exists(ENGINE_INI_PATH):
+        return False
+    with open(ENGINE_INI_PATH, "r") as f:
+        return "GameDefaultMap=/Game/Maps/MainMenuMap" in f.read()
+
+def toggle_skip_intro(var):
+    if var.get():
+        os.makedirs(os.path.dirname(ENGINE_INI_PATH), exist_ok=True)
+        with open(ENGINE_INI_PATH, "w") as f:
+            f.write(ENGINE_INI_CONTENT)
+    else:
+        if os.path.exists(ENGINE_INI_PATH):
+            os.remove(ENGINE_INI_PATH)
+
+BUNDLED_UE4SS_MODS = ["JedixxxPracticeMod"]
+
+def get_ue4ss_mods_path():
+    win64 = get_win64_path()
+    if not win64:
+        return None
+    return os.path.join(win64, "ue4ss", "Mods")
+
+def is_ue4ss_mod_installed(mod_name):
+    mods_path = get_ue4ss_mods_path()
+    if not mods_path:
+        return False
+    return os.path.exists(os.path.join(mods_path, mod_name))
+
+def toggle_ue4ss_mod(mod_name, var):
+    mods_path = get_ue4ss_mods_path()
+    if not mods_path:
+        var.set(not var.get())
+        return
+    src = os.path.join(get_bundled_mods_dir(), mod_name)
+    dst = os.path.join(mods_path, mod_name)
+    mods_txt = os.path.join(mods_path, "mods.txt")
+    if var.get():
+        if os.path.exists(src) and not os.path.exists(dst):
+            shutil.copytree(src, dst)
+        if os.path.exists(mods_txt):
+            with open(mods_txt, "r") as f:
+                content = f.read()
+            if mod_name not in content:
+                lines = content.rstrip().split("\n")
+                insert_at = next((i for i, l in enumerate(lines) if l.strip().startswith("; Built-in")), len(lines))
+                lines.insert(insert_at, f"{mod_name} : 1")
+                with open(mods_txt, "w") as f:
+                    f.write("\n".join(lines) + "\n")
+    else:
+        if os.path.exists(dst):
+            shutil.rmtree(dst)
+        if os.path.exists(mods_txt):
+            with open(mods_txt, "r") as f:
+                lines = f.readlines()
+            lines = [l for l in lines if not l.strip().startswith(mod_name)]
+            with open(mods_txt, "w") as f:
+                f.writelines(lines)
+
+def open_ue4ss_mods_window():
+    mods_path = get_ue4ss_mods_path()
+    if mods_path and os.path.exists(mods_path):
+        os.startfile(mods_path)
+    else:
+        import tkinter.messagebox as mb
+        mb.showwarning("UE4SS Not Found", "UE4SS mods folder not found.\nMake sure UE4SS is installed and the game path is set.")
+
+def get_paks_path():
+    if GAME_PATH:
+        return os.path.join(GAME_PATH, "EscapeTheBackrooms", "Content", "Paks")
+    return None
+
+def auto_detect_mods_folder():
+    paks = get_paks_path()
+    if not paks or not os.path.exists(paks):
+        return None
+    folders = [f for f in os.listdir(paks) if os.path.isdir(os.path.join(paks, f))]
+    if folders:
+        return os.path.join(paks, folders[0])
+    logic_mods = os.path.join(paks, "LogicMods")
+    os.makedirs(logic_mods, exist_ok=True)
+    return logic_mods
 
 def get_mods_path():
     path = os.path.join(get_exe_dir(), "mods_path.txt")
     if os.path.exists(path):
-        with open(path, "r") as f:
-            return f.read().strip()
+        saved = open(path).read().strip()
+        if saved and os.path.exists(saved):
+            return saved
+    detected = auto_detect_mods_folder()
+    if detected:
+        save_mods_path(detected)
+        return detected
     return None
 
 def save_mods_path(p):
@@ -775,15 +1084,27 @@ def get_mod_files():
     return [f for f in os.listdir(path) if f.endswith(".pak") or f.endswith(".pak.disabled")]
 
 def refresh_mods():
+    mods_path = get_mods_path()
     mod_listbox.delete(0, tk.END)
-    files = get_mod_files()
+    if is_ue4ss_installed():
+        mod_listbox.insert(tk.END, "UE4SS (Win64)")
+    if not mods_path or not os.path.exists(mods_path):
+        if not is_ue4ss_installed():
+            mod_listbox.insert(tk.END, "No mods found.")
+        return
+    files = [f for f in os.listdir(mods_path) if f.endswith(".pak") or f.endswith(".pak.disabled")]
     if files:
         for f in files:
             mod_listbox.insert(tk.END, f)
             if f.endswith(".disabled"):
                 mod_listbox.itemconfig(tk.END, fg="#666666")
-    else:
+    elif not is_ue4ss_installed():
         mod_listbox.insert(tk.END, "No mods found.")
+
+def refresh_mods_loop():
+    if mode_var.get() == "Mod Manager":
+        refresh_mods()
+    root.after(2000, refresh_mods_loop)
 
 def toggle_mod():
     selection = mod_listbox.curselection()
@@ -825,34 +1146,63 @@ def delete_mod():
     tk.Button(btn_frame, text="Cancel", command=popup.destroy, bg="#2a2a2a", fg="#dddddd", relief="flat", font=("Segoe UI", 9), cursor="hand2", padx=8, pady=4).pack(side="left")
 
 saved_path = get_mods_path()
-mods_path_label = tk.Label(mod_frame, text=f"Mods folder: ...{saved_path[-30:]}" if saved_path else "No mods folder selected.", bg="#1a1a1a", fg="#666666", font=("Segoe UI", 8), wraplength=290)
-mods_path_label.pack(pady=(4, 4))
+mods_path_label = tk.Label(mod_frame, text=f"Mods folder: ...{saved_path[-30:]}" if saved_path else "No mods folder detected.", bg="#1a1a1a", fg="#666666", font=("Segoe UI", 8), wraplength=290)
+mods_path_label.pack(pady=(4, 6))
 
-pick_btn = tk.Button(mod_frame, text="Select Mods Folder", command=pick_mods_folder, bg="#2a2a2a", fg="#dddddd", activebackground="#3a3a3a", activeforeground="white", relief="flat", font=("Segoe UI", 9), cursor="hand2", padx=8, pady=4)
-pick_btn.pack(pady=(0, 6))
+tk.Label(mod_frame, text="Pre-Installed Mods", bg="#1a1a1a", fg="#aaaaaa", font=("Segoe UI", 9, "bold")).pack(pady=(0, 2))
+
+bundled_vars = {}
+for mod in BUNDLED_MODS:
+    var = tk.BooleanVar(value=get_bundled_mod_state(mod))
+    bundled_vars[mod] = var
+    display_name = BUNDLED_MOD_NAMES.get(mod, mod.replace(".pak", "").replace("_", " "))
+    tk.Checkbutton(mod_frame, text=display_name, variable=var, command=lambda m=mod, v=var: toggle_bundled_mod(m, v), bg="#1a1a1a", fg="#aaaaaa", activebackground="#1a1a1a", activeforeground="#ffffff", selectcolor="#1a1a1a", font=("Segoe UI", 9), cursor="hand2").pack(anchor="w", padx=20, pady=1)
+
+ue4ss_row = tk.Frame(mod_frame, bg="#1a1a1a")
+ue4ss_row.pack(anchor="w", padx=20, pady=1)
+
+ue4ss_var = tk.BooleanVar(value=is_ue4ss_installed())
+
+ue4ss_mods_btn = tk.Button(ue4ss_row, text="Mods", command=open_ue4ss_mods_window, bg="#2a2a2a", fg="#dddddd", activebackground="#3a3a3a", activeforeground="white", relief="flat", font=("Segoe UI", 8), cursor="hand2", padx=6, pady=2)
+
+def on_ue4ss_toggle():
+    toggle_ue4ss(ue4ss_var)
+    if ue4ss_var.get():
+        ue4ss_mods_btn.pack(side="left", padx=(6, 0))
+    else:
+        ue4ss_mods_btn.pack_forget()
+
+tk.Checkbutton(ue4ss_row, text="UE4SS", variable=ue4ss_var, command=on_ue4ss_toggle,
+               bg="#1a1a1a", fg="#aaaaaa", activebackground="#1a1a1a", activeforeground="#ffffff",
+               selectcolor="#1a1a1a", font=("Segoe UI", 9), cursor="hand2").pack(side="left")
+
+if ue4ss_var.get():
+    ue4ss_mods_btn.pack(side="left", padx=(6, 0))
+
+tk.Label(mod_frame, text="Installed Mods", bg="#1a1a1a", fg="#aaaaaa", font=("Segoe UI", 9, "bold")).pack(pady=(8, 2))
 
 mod_list_frame = tk.Frame(mod_frame, bg="#2a2a2a")
-mod_list_frame.pack(padx=16, fill="both", expand=True)
+mod_list_frame.pack(padx=16, fill="x")
 
-mod_listbox = tk.Listbox(mod_list_frame, bg="#2a2a2a", fg="#dddddd", font=("Segoe UI", 9), relief="flat", highlightthickness=0, selectbackground="#c0392b", selectforeground="white", borderwidth=0)
-mod_listbox.pack(fill="both", expand=True, padx=6, pady=6)
-
-mod_status = tk.Label(mod_frame, text="Grey = disabled, White = enabled.", bg="#1a1a1a", fg="#666666", font=("Segoe UI", 8))
-mod_status.pack(pady=(6, 4))
-
-mod_btn_frame = tk.Frame(mod_frame, bg="#1a1a1a")
-mod_btn_frame.pack(pady=(0, 10))
-
-toggle_btn = tk.Button(mod_btn_frame, text="Enable/Disable", command=toggle_mod, bg="#2a2a2a", fg="#dddddd", activebackground="#3a3a3a", activeforeground="white", relief="flat", font=("Segoe UI", 9), cursor="hand2", padx=8, pady=4)
-toggle_btn.pack(side="left", padx=(0, 6))
-
-del_mod_btn = tk.Button(mod_btn_frame, text="Delete Mod", command=delete_mod, bg="#c0392b", fg="white", activebackground="#e74c3c", activeforeground="white", relief="flat", font=("Segoe UI", 9), cursor="hand2", padx=8, pady=4)
-del_mod_btn.pack(side="left")
+mod_listbox = tk.Listbox(mod_list_frame, bg="#2a2a2a", fg="#dddddd", font=("Segoe UI", 9), relief="flat", highlightthickness=0, selectbackground="#c0392b", selectforeground="white", borderwidth=0, height=5)
+mod_listbox.pack(fill="x", padx=6, pady=6)
 
 if saved_path:
     refresh_mods()
 
+tk.Button(mod_frame, text="Launch Escape the Backrooms", command=launch_etb, bg="#c0392b", fg="white", activebackground="#e74c3c", activeforeground="white", font=("Segoe UI", 10, "bold"), relief="flat", padx=16, pady=8, cursor="hand2").pack(pady=(8, 4))
+
+skip_intro_var = tk.BooleanVar(value=is_intro_skipped())
+tk.Checkbutton(mod_frame, text="Skip Intro", variable=skip_intro_var, command=lambda: toggle_skip_intro(skip_intro_var), bg="#1a1a1a", fg="#aaaaaa", activebackground="#1a1a1a", activeforeground="#ffffff", selectcolor="#1a1a1a", font=("Segoe UI", 9), cursor="hand2").pack(pady=(0, 6))
+
 INPUT_INI = os.path.join(os.environ["LOCALAPPDATA"], "EscapeTheBackrooms", "Saved", "Config", "WindowsNoEditor", "Input.ini")
+ETB_ACTIONS = [
+    "Back", "Chat", "Crouch", "Interact", "Inventory",
+    "ItemSlot1", "ItemSlot2", "ItemSlot3", "Jump", "LeanLeft",
+    "LeanRight", "LoadLastCoords", "PlayerList", "Secondary",
+    "Settings", "ShowIDCard", "SkipVideo", "Sprint", "Use"
+]
+
 GAMEPAD_PREFIXES = ["Gamepad_", "OculusTouch_", "Vive_", "ValveIndex_", "MagicLeap_"]
 
 def is_keyboard_key(key):
@@ -963,7 +1313,8 @@ def delete_keybind():
 
 def add_keybind():
     bindings = parse_keybinds()
-    actions = sorted(set(b[0] for b in bindings)) if bindings else ["Jump", "Interact", "Crouch", "Sprint", "Flashlight"]
+    existing_actions = sorted(set(b[0] for b in bindings)) if bindings else []
+    actions = sorted(set(existing_actions + ETB_ACTIONS))
     popup = tk.Toplevel(root)
     popup.title("Add Keybind")
     popup.geometry("280x180")
@@ -1024,15 +1375,20 @@ def edit_keybind():
     cur_shift = "bShift=True" in raw_line
     cur_ctrl = "bCtrl=True" in raw_line
     cur_alt = "bAlt=True" in raw_line
+    actions = sorted(set([b[0] for b in bindings] + ETB_ACTIONS))
 
     popup = tk.Toplevel(root)
     popup.title("Edit Keybind")
-    popup.geometry("280x180")
+    popup.geometry("280x200")
     popup.configure(bg="#1a1a1a")
     popup.resizable(False, False)
     popup.transient(root)
 
-    tk.Label(popup, text=f"Action: {action_name}", bg="#1a1a1a", fg="#aaaaaa", font=("Segoe UI", 9)).pack(pady=(10, 2))
+    tk.Label(popup, text="Action:", bg="#1a1a1a", fg="#aaaaaa", font=("Segoe UI", 9)).pack(pady=(10, 2))
+    action_var = tk.StringVar(value=action_name)
+    action_dd = ttk.Combobox(popup, textvariable=action_var, values=actions, font=("Segoe UI", 9), width=20)
+    action_dd.pack()
+
     tk.Label(popup, text="Key (e.g. C, SpaceBar, F1):", bg="#1a1a1a", fg="#aaaaaa", font=("Segoe UI", 9)).pack(pady=(8, 2))
     key_entry = tk.Entry(popup, font=("Segoe UI", 9), bg="#2a2a2a", fg="#dddddd", insertbackground="white", relief="flat")
     key_entry.insert(0, cur_key)
@@ -1048,13 +1404,14 @@ def edit_keybind():
     tk.Checkbutton(mod_frame_e, text="Alt", variable=alt_var, bg="#1a1a1a", fg="#aaaaaa", selectcolor="#1a1a1a", activebackground="#1a1a1a", font=("Segoe UI", 8)).pack(side="left", padx=4)
 
     def do_edit():
+        action = action_var.get().strip()
         key = key_entry.get().strip()
-        if not key:
+        if not action or not key:
             return
         s = "True" if shift_var.get() else "False"
         c = "True" if ctrl_var.get() else "False"
         a = "True" if alt_var.get() else "False"
-        new_line = f'ActionMappings=(ActionName="{action_name}",bShift={s},bCtrl={c},bAlt={a},bCmd=False,Key={key})'
+        new_line = f'ActionMappings=(ActionName="{action}",bShift={s},bCtrl={c},bAlt={a},bCmd=False,Key={key})'
         remaining = [b[2] if i != selection[0] else new_line for i, b in enumerate(bindings)]
         save_keybinds(remaining)
         popup.destroy()
@@ -1085,10 +1442,15 @@ def auto_delete_worker():
 listener = pynput_keyboard.Listener(on_press=on_global_key)
 listener.start()
 
+mouse_listener = pynput_mouse.Listener(on_click=on_global_mouse_click)
+mouse_listener.start()
+
 refresh_saves()
 refresh_versions()
 refresh_keybinds()
+refresh_mods_loop()
 auto_delete_worker()
 monitor_cursor_state()
+show_mod_manager()
 
 root.mainloop()
