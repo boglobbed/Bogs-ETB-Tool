@@ -1,3 +1,5 @@
+[![Latest Release](https://img.shields.io/github/v/release/boglobbed/Bogs-ETB-Tool?color=red&label=Download)](https://github.com/boglobbed/Bogs-ETB-Tool/releases/latest)
+
 # Bog's ETB Tool
 
 A utility tool for Escape the Backrooms speedrunning. Includes a mod manager, save file deleter, version switcher, and keybind editor.
