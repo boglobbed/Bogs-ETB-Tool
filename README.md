@@ -1,7 +1,6 @@
 [![Latest Release](https://img.shields.io/github/v/release/boglobbed/Bogs-ETB-Tool?color=red&label=Download)](https://github.com/boglobbed/Bogs-ETB-Tool/releases/latest)
 
-![ETB Launcher](Screenshot%202026-06-08%20143343.png)
-![Version Switcher](Screenshot%202026-06-08%20143422.png)
+<img src="assets/Screenshot%202026-06-08%20143343.png" width="45%"/> <img src="assets/Screenshot%202026-06-08%20143422.png" width="45%"/>
 
 # Bog's ETB Tool
 
